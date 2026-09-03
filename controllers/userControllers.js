@@ -1,122 +1,409 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import User from "../models/user.js"
+import User from "../models/user.js";
+import OTP from "../models/otpModel.js";
+import nodemailer from "nodemailer";
+import getDesignedEmail from "../lib/emailDesigner.js";
 
-// Example controller function
-export const createUser = async (req, res) => {
-    try {
-        // Validate required fields
-        const { email, firstName, lastName, password } = req.body;
+// --- CONFIGURATION FOR EMAIL USING ENVIRONMENT VARIABLES ---
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+  tls: {
+    rejectUnauthorized: false,
+  },
+});
 
-        if (!email || !firstName || !lastName || !password) {
-            return res.status(400).json({ message: "All fields are required" });
-        }
+// --- 1. SEND OTP (WITH EMAIL DESIGNER INTEGRATION) ---
+export const sendOTP = async (req, res) => {
+  try {
+    const identifier =
+      req.params.identifier || req.body.identifier || req.params.email;
 
-        // Hash password
-        const hashedPassword = await bcrypt.hash(password, 10);
+    if (!identifier) {
+      return res
+        .status(400)
+        .json({ message: "Email or phone number is required" });
+    }
 
-        // Create user
-        const user = new User({
-            email: email,
-            firstName: firstName,   // FIXED: req.bofy → req.body
-            lastName: lastName,
-            password: hashedPassword
-        });
+    const user = await User.findOne({
+      $or: [{ email: identifier }, { phone: identifier }],
+    });
 
-        await user.save();
+    if (!user) {
+      return res
+        .status(404)
+        .json({ message: "User not found with that email/phone" });
+    }
+
+    // Generate random 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // 🔑 PRINT OTP DIRECTLY IN BACKEND TERMINAL FOR TESTING
+    console.log("------------------------------------------");
+    console.log(`🔑 GENERATED OTP FOR ${user.email}: ${otp}`);
+    console.log("------------------------------------------");
+
+    // Store/Update OTP in User model
+    user.otp = otp;
+    user.otpExpiry = Date.now() + 10 * 60 * 1000;
+    await user.save();
+
+    // Upsert in standalone OTP model
+    await OTP.findOneAndUpdate(
+      { email: user.email },
+      { otp },
+      { upsert: true, new: true }
+    );
+
+    if (identifier.includes("@")) {
+      try {
+        const mailOptions = {
+          from: `"Crystal Beauty Clear" <${process.env.EMAIL_USER}>`,
+          to: user.email,
+          subject: "Your Password Reset OTP",
+          text: `Hi ${user.firstName || "there"}! Your OTP for resetting your password is: ${otp}. It will expire in 10 minutes.`,
+          html: getDesignedEmail({
+            otp,
+            firstName: user.firstName || "Customer",
+            brandName: "Crystal Beauty Clear",
+            supportEmail: process.env.EMAIL_USER,
+          }),
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log("✅ Email sent successfully:", info.response);
 
         return res.json({
-            message: "User created successfully"
+          message: "OTP sent to your email",
         });
-
-    } catch (error) {
-        console.error(error);
+      } catch (emailError) {
+        console.error("❌ NODEMAILER ERROR DETECTED:", emailError);
         return res.status(500).json({
-            message: "Failed to create user"
+          message: "Failed to send OTP email: " + (emailError.message || "Email error"),
         });
+      }
+    } else {
+      console.log("------------------------------------------");
+      console.log(`📱 SMS SIMULATOR: Sending to ${identifier}`);
+      console.log(`💬 MESSAGE: Your CrystalBeauty OTP is ${otp}`);
+      console.log("------------------------------------------");
+
+      return res.json({
+        message: "OTP sent via SMS (Check terminal)",
+      });
     }
+  } catch (error) {
+    console.error("OTP General Error:", error);
+    res.status(500).json({
+      message: "Internal server error",
+    });
+  }
 };
 
-export function loginUser(req,res){
-    if(req.user==null){
-        res.status(401).json({
-            message:"please login and try again"
-        }
+// --- 2. CHANGE PASSWORD ---
+export const changePassword = async (req, res) => {
+  try {
+    const { identifier, otp, newPassword } = req.body;
 
-        )
-        return
+    const user = await User.findOne({
+      $or: [{ email: identifier }, { phone: identifier }],
+      otp,
+      otpExpiry: {
+        $gt: Date.now(),
+      },
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        message: "Invalid or expired OTP",
+      });
     }
-    if(req.user.role!="admin"){
-        res.status(403).json({
-            message:"you must be an admin to create a user"
-        })
-        return
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    user.otp = undefined;
+    user.otpExpiry = undefined;
+
+    await user.save();
+
+    // Clean up OTP collection entry upon successful reset
+    await OTP.deleteOne({ email: user.email });
+
+    res.json({
+      message: "Password changed successfully",
+    });
+  } catch (error) {
+    console.error("Password Change Error:", error);
+    res.status(500).json({
+      message: "Internal server error",
+    });
+  }
+};
+
+// --- 3. CREATE USER ---
+export const createUser = async (req, res) => {
+  try {
+    const { email, firstName, lastName, password, phone } = req.body;
+
+    if (!email || !firstName || !lastName || !password) {
+      return res.status(400).json({
+        message: "All fields are required",
+      });
     }
 
-    user.findOne(
-        {
-            email:req.body.email
-        }
-    ).then(
+    const existingUser = await User.findOne({ email });
 
+    if (existingUser) {
+      return res.status(400).json({
+        message: "User already exists",
+      });
+    }
 
-        (user)=>{
-            if(user==null){
-                res.status(404).json(
-                    {
-                        message:"User not found"
-                    }
-                )
-            } else{
-                const isPasswordMatching=bycrypt.compareSync(req.body.password,user.password)
-                const token=jwt.sign(
-                    {
-                        email:user.email,
-                        firstName:user.firstName,
-                        lastName:user.lastName,
-                        role:user.role,
-                        isEmailVerified:user.isEmailVerified
-                    
-                    },
-                    "jwt-secret"
-                )
-                res.json(
-                    {
-                        message:"login successul",
-                        token:token               
-                }
-            )
-                if(isPasswordMatching){
-                    res.status(401).json(
-                        {
-                            message:"Login successfull",
-                        }
-                    )
-                } else{
-                    res.json(
-                        {
-                            message:"Invalid password"
-                        }
-                    )
-                }
-            }
-        }
-    )
+    const hashedPassword = await bcrypt.hash(password, 10);
 
+    const user = new User({
+      email,
+      phone,
+      firstName,
+      lastName,
+      password: hashedPassword,
+      role: "customer",
+      isEmailVerified: true,
+    });
 
+    await user.save();
 
+    return res.status(201).json({
+      message: "User created successfully",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Failed to create user",
+    });
+  }
+};
+
+// --- 4. LOGIN USER ---
+export async function loginUser(req, res) {
+  try {
+    const { email, password } = req.body;
+
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    if (user.isBlock) {
+      return res.status(403).json({
+        message: "Account suspended.",
+      });
+    }
+
+    const isMatch = bcrypt.compareSync(password, user.password);
+
+    if (!isMatch) {
+      return res.status(401).json({
+        message: "Invalid password",
+      });
+    }
+
+    const secret = process.env.JWT_KEY || "jwt-secret";
+
+    const token = jwt.sign(
+      {
+        id: user._id,
+        email: user.email,
+        role: user.role,
+      },
+      secret,
+      {
+        expiresIn: "24h",
+      }
+    );
+
+    return res.json({
+      message: "Login successful",
+      token,
+      user,
+    });
+  } catch (error) {
+    console.error("Login Error Context:", error);
+    return res.status(500).json({
+      message: "An error occurred",
+    });
+  }
 }
-export function isAdmin(req){
-    if(req.user==null){
-        return false;
+
+// --- 5. GET USER PROFILE ---
+export async function getUser(req, res) {
+  try {
+    if (!req.user || !req.user.email) {
+      return res.status(401).json({
+        message: "Unauthorized",
+      });
     }
-    if (req.user.role!="admin"){
-        return false
+
+    const user = await User.findOne({
+      email: req.user.email,
+    }).select("-password");
+
+    if (!user) {
+      return res.status(404).json({
+        message: "User profile not found",
+      });
     }
-    return true;
+
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({
+      message: "Server error",
+    });
+  }
 }
 
-          
+// --- UPDATE USER PROFILE ---
+export const updateUser = async (req, res) => {
+  try {
+    if (!req.user || !req.user.email) {
+      return res.status(401).json({
+        message: "Unauthorized token state context",
+      });
+    }
 
+    const email = req.user.email;
 
-  
+    let updateData = {
+      ...(req.body || {}),
+    };
+
+    if (req.file) {
+      updateData.image = `/uploads/${req.file.filename}`;
+    }
+
+    let streetVal =
+      updateData.address ||
+      updateData["shippingAddress[street]"] ||
+      (updateData.shippingAddress && updateData.shippingAddress.street);
+
+    let cityVal =
+      updateData["shippingAddress[city]"] ||
+      (updateData.shippingAddress && updateData.shippingAddress.city) ||
+      "Colombo";
+
+    let postalCodeVal =
+      updateData["shippingAddress[postalCode]"] ||
+      (updateData.shippingAddress && updateData.shippingAddress.postalCode) ||
+      "00300";
+
+    let countryVal =
+      updateData["shippingAddress[country]"] ||
+      (updateData.shippingAddress && updateData.shippingAddress.country) ||
+      "Sri Lanka";
+
+    if (streetVal) {
+      updateData.shippingAddress = {
+        street: streetVal,
+        city: cityVal,
+        postalCode: postalCodeVal,
+        country: countryVal,
+      };
+
+      updateData.address = streetVal;
+    }
+
+    delete updateData["shippingAddress[street]"];
+    delete updateData["shippingAddress[city]"];
+    delete updateData["shippingAddress[postalCode]"];
+    delete updateData["shippingAddress[country]"];
+
+    const updatedUser = await User.findOneAndUpdate(
+      { email },
+      { $set: updateData },
+      { new: true }
+    ).select("-password");
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        message: "Could not find a user profile to update",
+      });
+    }
+
+    res.json({
+      message: "Successfully updated profile details!",
+      user: updatedUser,
+    });
+  } catch (error) {
+    console.error("Backend Profile Update Failure:", error);
+    res.status(500).json({
+      message: "Update process failed inside database records",
+    });
+  }
+};
+
+// --- UPDATE USER STATUS (ADMIN BLOCK / UNBLOCK) ---
+export const updateUserStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isBlock } = req.body;
+
+    const user = await User.findById(id);
+
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    if (user.email === process.env.EMAIL_USER) {
+      return res.status(403).json({
+        message: "Admin protected",
+      });
+    }
+
+    user.isBlock = isBlock;
+    await user.save();
+
+    res.json({
+      message: "Status updated",
+      user,
+    });
+  } catch (error) {
+    console.error("Update User Status Error:", error);
+    res.status(500).json({
+      message: "Server error",
+    });
+  }
+};
+
+// --- GET ALL USERS (ADMIN) ---
+export const getAllUsers = async (req, res) => {
+  try {
+    const users = await User.find({}, "-password");
+    res.status(200).json(users);
+  } catch (error) {
+    console.error("Fetch Users Error:", error);
+    res.status(500).json({
+      message: "Fetch failed",
+    });
+  }
+};
+
+// --- VERIFY ADMIN MIDDLEWARE ---
+export function verifyAdmin(req, res, next) {
+  if (
+    req.user &&
+    req.user.role === "admin"
+  ) {
+    next();
+  } else {
+    res.status(403).json({
+      message: "Access Denied: Admins Only",
+    });
+  }
+}

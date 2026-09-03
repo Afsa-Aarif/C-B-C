@@ -1,106 +1,112 @@
+import 'dotenv/config';
 import express from "express";
 import mongoose from "mongoose";
-
-/* ===== ✅ ADDED (missing import) ===== */
 import jwt from "jsonwebtoken";
-/* =================================== */
+import cors from "cors";
+import path from "path";
 
+// Router Imports
 import userRouter from "./routers/userRouter.js";
 import productRouter from "./routers/productRouter.js";
+import orderRouter from "./routers/orderRouter.js";
+import paymentRouter from "./routers/paymentRouter.js";
+import wishlistRouter from "./routers/wishlistRouter.js";
+import contactRouter from "./routers/contactRouter.js";
+import couponRouter from "./routers/couponRouter.js";
 
-function getUsers(dbPassword){
-    const myProise = new Promise(
-        (resolve,reject)=>{
-            if(dbPassword==""){
-                setTimeout(()=>{
-                    resolve()
-                },5000)
-            }else{
-                reject({
-                    message:"invalid password",
-                })
-            }
-        }
-    )
+const app = express();
 
-    /* ===== ✅ ADDED (missing variable) ===== */
-    const myPromise = myProise;
-    /* ===================================== */
+// 1. Path Configuration
+const __dirname = path.resolve();
 
-    return myPromise
-}
-
-/* ===== ✅ ADDED (async wrapper for await) ===== */
-(async ()=>{
-    try{
-        let users=await getUsers("")
-        console.log(users)
-        console.log("Users fetch successfully")
-    } catch(error){
-        console.error(error)
-        console.error("Error fetching user")
-    }
-})();
-/* ============================================= */
-
-const app = express()
-
-app.use(express.json())
-app.use("/users", userRouter)
-app.use("/products",productRouter)
+// 2. Updated CORS Configuration (Fixes Browser Blocking)
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "http://localhost:3000"
+];
 
 app.use(
-    (req, res, next) => {
-        let token = req.header("Authorization")
-        if (token != null) {
-            token = token.replace("Bearer ", "")
-        }
-        console.log(token)
+  cors({
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps, curl, or server-to-server)
+      if (!origin) return callback(null, true);
+      
+      if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith(".vercel.app") || origin.endsWith(".onrender.com")) {
+        callback(null, true);
+      } else {
+        // Fallback: allows request in production to avoid CORS blockage
+        callback(null, true);
+      }
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"]
+  })
+);
 
-        jwt.verify(token, "jwt-secret",
-            (err, decoded) => {
-                if (decoded == null) {
-                    res.json({
-                        message: "invalid token please login again"
-                    })
-                    return
-                } else {
-                    req.user = decoded;
-                    next();
-                }
-                console.log(decoded)
-            }
-        )
-    }
-)
+app.use(express.json());
 
-/* ===== ✅ ADDED (clean connection string) ===== */
-const cleanConnectionString =
-"mongodb+srv://Afsa:Af16191.@cluster0.ggaur4k.mongodb.net/?appName=Cluster0";
-/* ============================================ */
+// --- STATIC FILES CONFIGURATION ---
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-mongoose.connect(cleanConnectionString).then(
-    () => { console.log("Database connected successfuly") }
-).catch(
-    (e) => { 
-        console.log(e);
-        console.log("Database connection failed") }
-)
+// 3. Database Connection
+const connectionString = process.env.MONGO_URL;
 
-app.get("/", (req, res) => {
-    console.log("Get request received");
-    let prefix = "Mr.";
-    if (req.body.gender === "female") { prefix = "Ms."; }
-    console.log(req.body);
-    res.json({
-        message: "Hello " + prefix + "  " + req.body.name
+mongoose.connect(connectionString)
+  .then(() => console.log("✅ Database connected successfully"))
+  .catch((e) => console.error("❌ Database connection failed:", e));
+
+// 4. Security Middleware (JWT Decoder & Request Context Builder)
+app.use((req, res, next) => {
+  let token = req.header("Authorization");
+  
+  if (token && token.startsWith("Bearer ")) {
+    token = token.replace("Bearer ", "");
+    
+    const secret = process.env.JWT_KEY || "jwt-secret";
+    
+    jwt.verify(token, secret, (err, decoded) => {
+      if (err) {
+        req.user = null;
+      } else {
+        req.user = decoded; 
+      }
+      next();
     });
+  } else {
+    req.user = null;
+    next();
+  }
 });
 
-app.delete("/", (req, res) => {
-    console.log("post request received")
-})
+// 5. API Routes
+app.use("/api/users", userRouter); 
+app.use("/api/products", productRouter);
+app.use("/api/orders", orderRouter); 
+app.use("/api/payment", paymentRouter);
+app.use("/api/wishlist", wishlistRouter);
+app.use("/api/contact", contactRouter);
+app.use("/api/coupons", couponRouter);
 
-app.listen(5000, () => {
-    console.log("server is started")
-})
+// 6. Health Check
+app.get("/", (req, res) => {
+  res.json({ 
+    message: "Crystal Beauty Backend is Running",
+    dbStatus: mongoose.connection.readyState === 1 ? "Connected" : "Disconnected"
+  });
+});
+
+// 7. Global Error Handler
+app.use((err, req, res, next) => {
+  console.error("🔥 Global Error:", err.stack);
+  res.status(500).send({ 
+    error: 'Internal Server Error',
+    message: err.message 
+  });
+});
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`🚀 Server started on port ${PORT}`);
+});
