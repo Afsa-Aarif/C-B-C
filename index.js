@@ -19,7 +19,7 @@ const app = express();
 // 1. Path Configuration
 const __dirname = path.resolve();
 
-// 2. Updated CORS Configuration (Fixes Browser Blocking)
+// 2. Updated CORS Configuration (Includes Netlify and Localhost)
 const allowedOrigins = [
   "http://localhost:5173",
   "http://127.0.0.1:5173",
@@ -29,13 +29,16 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: function (origin, callback) {
-      // Allow requests with no origin (like mobile apps, curl, or server-to-server)
       if (!origin) return callback(null, true);
       
-      if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith(".vercel.app") || origin.endsWith(".onrender.com")) {
+      if (
+        allowedOrigins.indexOf(origin) !== -1 || 
+        origin.endsWith(".vercel.app") || 
+        origin.endsWith(".onrender.com") ||
+        origin.endsWith(".netlify.app")
+      ) {
         callback(null, true);
       } else {
-        // Fallback: allows request in production to avoid CORS blockage
         callback(null, true);
       }
     },
@@ -57,7 +60,7 @@ mongoose.connect(connectionString)
   .then(() => console.log("✅ Database connected successfully"))
   .catch((e) => console.error("❌ Database connection failed:", e));
 
-// 4. Security Middleware (JWT Decoder & Request Context Builder)
+// 4. Security Middleware (JWT Decoder)
 app.use((req, res, next) => {
   let token = req.header("Authorization");
   

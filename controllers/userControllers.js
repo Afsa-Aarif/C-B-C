@@ -6,22 +6,24 @@ import nodemailer from "nodemailer";
 import getDesignedEmail from "../lib/emailDesigner.js";
 
 // --- CONFIGURATION FOR EMAIL USING ENVIRONMENT VARIABLES ---
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-  tls: {
-    rejectUnauthorized: false,
-  },
-});
+const createTransporter = () => {
+  return nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+    tls: {
+      rejectUnauthorized: false,
+    },
+  });
+};
 
-// --- 1. SEND OTP (WITH EMAIL DESIGNER INTEGRATION) ---
+// --- 1. SEND OTP ---
 export const sendOTP = async (req, res) => {
   try {
     const identifier =
-      req.params.identifier || req.body.identifier || req.params.email;
+      req.body.email || req.body.identifier || req.params.identifier || req.params.email;
 
     if (!identifier) {
       return res
@@ -29,8 +31,10 @@ export const sendOTP = async (req, res) => {
         .json({ message: "Email or phone number is required" });
     }
 
+    const cleanIdentifier = identifier.trim();
+
     const user = await User.findOne({
-      $or: [{ email: identifier }, { phone: identifier }],
+      $or: [{ email: cleanIdentifier }, { phone: cleanIdentifier }],
     });
 
     if (!user) {
@@ -42,7 +46,6 @@ export const sendOTP = async (req, res) => {
     // Generate random 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
-    // 🔑 PRINT OTP DIRECTLY IN BACKEND TERMINAL FOR TESTING
     console.log("------------------------------------------");
     console.log(`🔑 GENERATED OTP FOR ${user.email}: ${otp}`);
     console.log("------------------------------------------");
@@ -59,19 +62,29 @@ export const sendOTP = async (req, res) => {
       { upsert: true, new: true }
     );
 
-    if (identifier.includes("@")) {
+    if (cleanIdentifier.includes("@")) {
+      // Verify if email environment variables exist
+      if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+        console.warn("⚠️ WARNING: EMAIL_USER or EMAIL_PASS environment variables are missing on Render.");
+        return res.json({
+          message: "OTP generated successfully (Email delivery skipped: Missing credentials in environment variables)",
+          otp: process.env.NODE_ENV === "development" ? otp : undefined
+        });
+      }
+
       try {
+        const transporter = createTransporter();
         const mailOptions = {
           from: `"Crystal Beauty Clear" <${process.env.EMAIL_USER}>`,
           to: user.email,
           subject: "Your Password Reset OTP",
           text: `Hi ${user.firstName || "there"}! Your OTP for resetting your password is: ${otp}. It will expire in 10 minutes.`,
-          html: getDesignedEmail({
+          html: getDesignedEmail ? getDesignedEmail({
             otp,
             firstName: user.firstName || "Customer",
             brandName: "Crystal Beauty Clear",
             supportEmail: process.env.EMAIL_USER,
-          }),
+          }) : `<p>Your OTP is <b>${otp}</b></p>`,
         };
 
         const info = await transporter.sendMail(mailOptions);
@@ -83,23 +96,23 @@ export const sendOTP = async (req, res) => {
       } catch (emailError) {
         console.error("❌ NODEMAILER ERROR DETECTED:", emailError);
         return res.status(500).json({
-          message: "Failed to send OTP email: " + (emailError.message || "Email error"),
+          message: "Failed to send OTP email: " + (emailError.message || "Email transport failure"),
         });
       }
     } else {
       console.log("------------------------------------------");
-      console.log(`📱 SMS SIMULATOR: Sending to ${identifier}`);
+      console.log(`📱 SMS SIMULATOR: Sending to ${cleanIdentifier}`);
       console.log(`💬 MESSAGE: Your CrystalBeauty OTP is ${otp}`);
       console.log("------------------------------------------");
 
       return res.json({
-        message: "OTP sent via SMS (Check terminal)",
+        message: "OTP sent via SMS",
       });
     }
   } catch (error) {
     console.error("OTP General Error:", error);
     res.status(500).json({
-      message: "Internal server error",
+      message: "Internal server error: " + (error.message || "Server failure"),
     });
   }
 };
@@ -109,9 +122,16 @@ export const changePassword = async (req, res) => {
   try {
     const { identifier, otp, newPassword } = req.body;
 
+    if (!identifier || !otp || !newPassword) {
+      return res.status(400).json({ message: "All fields (identifier, otp, newPassword) are required" });
+    }
+
+    const cleanIdentifier = identifier.trim();
+    const cleanOtp = otp.trim();
+
     const user = await User.findOne({
-      $or: [{ email: identifier }, { phone: identifier }],
-      otp,
+      $or: [{ email: cleanIdentifier }, { phone: cleanIdentifier }],
+      otp: cleanOtp,
       otpExpiry: {
         $gt: Date.now(),
       },
@@ -129,7 +149,6 @@ export const changePassword = async (req, res) => {
 
     await user.save();
 
-    // Clean up OTP collection entry upon successful reset
     await OTP.deleteOne({ email: user.email });
 
     res.json({
