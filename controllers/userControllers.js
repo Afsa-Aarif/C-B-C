@@ -5,8 +5,8 @@ import OTP from "../models/otpModel.js";
 import { Resend } from "resend";
 import getDesignedEmail from "../lib/emailDesigner.js";
 
-// Initialize Resend Client
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Initialize Resend Client with local fallback to prevent crashes when ENV is loading
+const resend = new Resend(process.env.RESEND_API_KEY || "re_dummy_key_for_local_dev");
 
 // --- 1. SEND OTP ---
 export const sendOTP = async (req, res) => {
