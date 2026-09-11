@@ -5,14 +5,20 @@ import OTP from "../models/otpModel.js";
 import nodemailer from "nodemailer";
 import getDesignedEmail from "../lib/emailDesigner.js";
 
-// --- CONFIGURATION FOR EMAIL USING ENVIRONMENT VARIABLES ---
+// --- CONFIGURATION FOR EMAIL USING ENVIRONMENT VARIABLES WITH TIMEOUTS ---
 const createTransporter = () => {
   return nodemailer.createTransport({
     service: "gmail",
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true, // Use SSL
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS,
     },
+    connectionTimeout: 10000, // 10 seconds connection timeout
+    greetingTimeout: 10000,
+    socketTimeout: 10000,
     tls: {
       rejectUnauthorized: false,
     },
@@ -79,7 +85,7 @@ export const sendOTP = async (req, res) => {
           to: user.email,
           subject: "Your Password Reset OTP",
           text: `Hi ${user.firstName || "there"}! Your OTP for resetting your password is: ${otp}. It will expire in 10 minutes.`,
-          html: getDesignedEmail ? getDesignedEmail({
+          html: typeof getDesignedEmail === "function" ? getDesignedEmail({
             otp,
             firstName: user.firstName || "Customer",
             brandName: "Crystal Beauty Clear",
@@ -111,7 +117,7 @@ export const sendOTP = async (req, res) => {
     }
   } catch (error) {
     console.error("OTP General Error:", error);
-    res.status(500).json({
+    return res.status(500).json({
       message: "Internal server error: " + (error.message || "Server failure"),
     });
   }
