@@ -5,18 +5,18 @@ import OTP from "../models/otpModel.js";
 import nodemailer from "nodemailer";
 import getDesignedEmail from "../lib/emailDesigner.js";
 
-// --- CONFIGURATION FOR EMAIL USING ENVIRONMENT VARIABLES WITH TIMEOUTS ---
+// --- CONFIGURATION FOR EMAIL USING ENVIRONMENT VARIABLES WITH FORCED IPv4 ---
 const createTransporter = () => {
   return nodemailer.createTransport({
-    service: "gmail",
     host: "smtp.gmail.com",
-    port: 465,
-    secure: true, // Use SSL
+    port: 587,
+    secure: false, // Port 587 uses STARTTLS
+    family: 4,     // Force IPv4 socket resolution
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS,
     },
-    connectionTimeout: 10000, // 10 seconds connection timeout
+    connectionTimeout: 10000,
     greetingTimeout: 10000,
     socketTimeout: 10000,
     tls: {
