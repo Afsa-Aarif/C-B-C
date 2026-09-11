@@ -2,35 +2,11 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import User from "../models/user.js";
 import OTP from "../models/otpModel.js";
-import nodemailer from "nodemailer";
-import dns from "dns";
+import { Resend } from "resend";
 import getDesignedEmail from "../lib/emailDesigner.js";
 
-// Force default DNS lookup to IPv4 globally in Node.js
-dns.setDefaultResultOrder("ipv4first");
-
-// --- CONFIGURATION FOR EMAIL USING ENVIRONMENT VARIABLES WITH STRICT IPv4 LOOKUP ---
-const createTransporter = () => {
-  return nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 587,
-    secure: false, // Port 587 uses STARTTLS
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
-    },
-    // Force custom DNS lookup to guarantee IPv4 resolution on Render
-    lookup: (hostname, options, callback) => {
-      dns.lookup(hostname, { family: 4 }, callback);
-    },
-    connectionTimeout: 10000, // 10 seconds connection timeout
-    greetingTimeout: 10000,
-    socketTimeout: 10000,
-    tls: {
-      rejectUnauthorized: false,
-    },
-  });
-};
+// Initialize Resend Client
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // --- 1. SEND OTP ---
 export const sendOTP = async (req, res) => {
@@ -76,38 +52,42 @@ export const sendOTP = async (req, res) => {
     );
 
     if (cleanIdentifier.includes("@")) {
-      // Verify if email environment variables exist
-      if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-        console.warn("⚠️ WARNING: EMAIL_USER or EMAIL_PASS environment variables are missing on Render.");
+      // Check if Resend API key is set
+      if (!process.env.RESEND_API_KEY) {
+        console.warn("⚠️ WARNING: RESEND_API_KEY environment variable is missing on Render.");
         return res.json({
-          message: "OTP generated successfully (Email delivery skipped: Missing credentials in environment variables)",
+          message: "OTP generated successfully (Email delivery skipped: Missing API key)",
           otp: process.env.NODE_ENV === "development" ? otp : undefined
         });
       }
 
       try {
-        const transporter = createTransporter();
-        const mailOptions = {
-          from: `"Crystal Beauty Clear" <${process.env.EMAIL_USER}>`,
+        const { data, error } = await resend.emails.send({
+          from: "Crystal Beauty Clear <onboarding@resend.dev>", // Default free testing sender
           to: user.email,
           subject: "Your Password Reset OTP",
-          text: `Hi ${user.firstName || "there"}! Your OTP for resetting your password is: ${otp}. It will expire in 10 minutes.`,
           html: typeof getDesignedEmail === "function" ? getDesignedEmail({
             otp,
             firstName: user.firstName || "Customer",
             brandName: "Crystal Beauty Clear",
-            supportEmail: process.env.EMAIL_USER,
+            supportEmail: "support@crystalbeauty.com",
           }) : `<p>Your OTP is <b>${otp}</b></p>`,
-        };
+        });
 
-        const info = await transporter.sendMail(mailOptions);
-        console.log("✅ Email sent successfully:", info.response);
+        if (error) {
+          console.error("❌ RESEND API ERROR:", error);
+          return res.status(500).json({
+            message: "Failed to send OTP email: " + error.message,
+          });
+        }
+
+        console.log("✅ Email sent successfully via Resend API:", data);
 
         return res.json({
           message: "OTP sent to your email",
         });
       } catch (emailError) {
-        console.error("❌ NODEMAILER ERROR DETECTED:", emailError);
+        console.error("❌ RESEND CATCH ERROR:", emailError);
         return res.status(500).json({
           message: "Failed to send OTP email: " + (emailError.message || "Email transport failure"),
         });
