@@ -3,20 +3,27 @@ import jwt from "jsonwebtoken";
 import User from "../models/user.js";
 import OTP from "../models/otpModel.js";
 import nodemailer from "nodemailer";
+import dns from "dns";
 import getDesignedEmail from "../lib/emailDesigner.js";
 
-// --- CONFIGURATION FOR EMAIL USING ENVIRONMENT VARIABLES WITH FORCED IPv4 ---
+// Force default DNS lookup to IPv4 globally in Node.js
+dns.setDefaultResultOrder("ipv4first");
+
+// --- CONFIGURATION FOR EMAIL USING ENVIRONMENT VARIABLES WITH STRICT IPv4 LOOKUP ---
 const createTransporter = () => {
   return nodemailer.createTransport({
     host: "smtp.gmail.com",
     port: 587,
     secure: false, // Port 587 uses STARTTLS
-    family: 4,     // Force IPv4 socket resolution
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS,
     },
-    connectionTimeout: 10000,
+    // Force custom DNS lookup to guarantee IPv4 resolution on Render
+    lookup: (hostname, options, callback) => {
+      dns.lookup(hostname, { family: 4 }, callback);
+    },
+    connectionTimeout: 10000, // 10 seconds connection timeout
     greetingTimeout: 10000,
     socketTimeout: 10000,
     tls: {
