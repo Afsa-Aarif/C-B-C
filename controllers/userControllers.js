@@ -2,11 +2,17 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import User from "../models/user.js";
 import OTP from "../models/otpModel.js";
-import { Resend } from "resend";
+import nodemailer from "nodemailer";
 import getDesignedEmail from "../lib/emailDesigner.js";
 
-// Initialize Resend Client with local fallback to prevent crashes when ENV is loading
-const resend = new Resend(process.env.RESEND_API_KEY || "re_dummy_key_for_local_dev");
+// Configure Nodemailer Transporter using Gmail SMTP
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
 
 // --- 1. SEND OTP ---
 export const sendOTP = async (req, res) => {
@@ -15,9 +21,7 @@ export const sendOTP = async (req, res) => {
       req.body.email || req.body.identifier || req.params.identifier || req.params.email;
 
     if (!identifier) {
-      return res
-        .status(400)
-        .json({ message: "Email or phone number is required" });
+      return res.status(400).json({ message: "Email or phone number is required" });
     }
 
     const cleanIdentifier = identifier.trim();
@@ -27,9 +31,7 @@ export const sendOTP = async (req, res) => {
     });
 
     if (!user) {
-      return res
-        .status(404)
-        .json({ message: "User not found with that email/phone" });
+      return res.status(404).json({ message: "User not found with that email/phone" });
     }
 
     // Generate random 6-digit OTP
@@ -52,60 +54,34 @@ export const sendOTP = async (req, res) => {
     );
 
     if (cleanIdentifier.includes("@")) {
-      // Check if Resend API key is set
-      if (!process.env.RESEND_API_KEY) {
-        console.warn("⚠️ WARNING: RESEND_API_KEY environment variable is missing on Render.");
-        return res.json({
-          message: "OTP generated successfully (Email delivery skipped: Missing API key)",
-          otp: process.env.NODE_ENV === "development" ? otp : undefined
-        });
-      }
+      const mailOptions = {
+        from: `"Crystal Beauty Clear" <${process.env.EMAIL_USER}>`,
+        to: user.email,
+        subject: "Your Password Reset OTP",
+        html: typeof getDesignedEmail === "function" ? getDesignedEmail({
+          otp,
+          firstName: user.firstName || "Customer",
+          brandName: "Crystal Beauty Clear",
+          supportEmail: "support@crystalbeauty.com",
+        }) : `<p>Your OTP is <b>${otp}</b></p>`,
+      };
 
-      try {
-        const { data, error } = await resend.emails.send({
-          from: "Crystal Beauty Clear <onboarding@resend.dev>", // Default free testing sender
-          to: user.email,
-          subject: "Your Password Reset OTP",
-          html: typeof getDesignedEmail === "function" ? getDesignedEmail({
-            otp,
-            firstName: user.firstName || "Customer",
-            brandName: "Crystal Beauty Clear",
-            supportEmail: "support@crystalbeauty.com",
-          }) : `<p>Your OTP is <b>${otp}</b></p>`,
-        });
+      await transporter.sendMail(mailOptions);
+      console.log(`✅ Email sent successfully via Gmail SMTP to ${user.email}`);
 
-        if (error) {
-          console.error("❌ RESEND API ERROR:", error);
-          return res.status(500).json({
-            message: "Failed to send OTP email: " + error.message,
-          });
-        }
-
-        console.log("✅ Email sent successfully via Resend API:", data);
-
-        return res.json({
-          message: "OTP sent to your email",
-        });
-      } catch (emailError) {
-        console.error("❌ RESEND CATCH ERROR:", emailError);
-        return res.status(500).json({
-          message: "Failed to send OTP email: " + (emailError.message || "Email transport failure"),
-        });
-      }
+      return res.json({ message: "OTP sent to your email" });
     } else {
       console.log("------------------------------------------");
       console.log(`📱 SMS SIMULATOR: Sending to ${cleanIdentifier}`);
       console.log(`💬 MESSAGE: Your CrystalBeauty OTP is ${otp}`);
       console.log("------------------------------------------");
 
-      return res.json({
-        message: "OTP sent via SMS",
-      });
+      return res.json({ message: "OTP sent via SMS" });
     }
   } catch (error) {
     console.error("OTP General Error:", error);
     return res.status(500).json({
-      message: "Internal server error: " + (error.message || "Server failure"),
+      message: "Failed to send OTP email: " + (error.message || "Server failure"),
     });
   }
 };
