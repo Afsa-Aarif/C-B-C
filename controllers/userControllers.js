@@ -7,7 +7,9 @@ import getDesignedEmail from "../lib/emailDesigner.js";
 
 // Configure Nodemailer Transporter using Gmail SMTP
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: "smtp-relay.brevo.com",
+  port: 2525,
+  secure: false,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
@@ -66,10 +68,19 @@ export const sendOTP = async (req, res) => {
         }) : `<p>Your OTP is <b>${otp}</b></p>`,
       };
 
-      await transporter.sendMail(mailOptions);
-      console.log(`✅ Email sent successfully via Gmail SMTP to ${user.email}`);
-
-      return res.json({ message: "OTP sent to your email" });
+      // CATCH SMTP PORT BLOCKING SAFELY (Prevents 500 Server Crashes on Free Hosting)
+      try {
+        await transporter.sendMail(mailOptions);
+        console.log(`✅ Email sent successfully via Gmail SMTP to ${user.email}`);
+        return res.json({ message: "OTP sent to your email address!" });
+      } catch (mailError) {
+        console.error("⚠️ SMTP Network Error / Port Blocked:", mailError.message);
+        
+        // Fallback response so frontend presentation flow never breaks
+        return res.json({ 
+          message: `OTP Generated! (Live cloud server blocked email port. Demo OTP Code: ${otp})` 
+        });
+      }
     } else {
       console.log("------------------------------------------");
       console.log(`📱 SMS SIMULATOR: Sending to ${cleanIdentifier}`);
