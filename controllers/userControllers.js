@@ -57,7 +57,7 @@ export const sendOTP = async (req, res) => {
 
     if (cleanIdentifier.includes("@")) {
       const mailOptions = {
-        from: `"Crystal Beauty Clear" <${process.env.EMAIL_USER}>`,
+        from: `"Crystal Beauty Clear" <f.afsaarif565@gmail.com>`,
         to: user.email,
         subject: "Your Password Reset OTP",
         html: typeof getDesignedEmail === "function" ? getDesignedEmail({
