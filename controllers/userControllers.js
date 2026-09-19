@@ -40,7 +40,7 @@ export const sendOTP = async (req, res) => {
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
     console.log("------------------------------------------");
-    console.log(`🔑 GENERATED OTP FOR ${user.email}: ${otp}`);
+    console.log(`🔑 OTP generated for ${user.email}`);
     console.log("------------------------------------------");
 
     // Store/Update OTP in User model
@@ -68,7 +68,7 @@ export const sendOTP = async (req, res) => {
         }) : `<p>Your OTP is <b>${otp}</b></p>`,
       };
 
-      // CATCH SMTP PORT BLOCKING SAFELY (Prevents 500 Server Crashes on Free Hosting)
+     // Handle SMTP sending errors safely
       try {
         await transporter.sendMail(mailOptions);
         console.log(`✅ Email sent successfully via Brevo SMTP to ${user.email}`);
@@ -77,14 +77,14 @@ export const sendOTP = async (req, res) => {
         console.error("⚠️ SMTP Network Error / Port Blocked:", mailError.message);
         
         // Fallback response so frontend presentation flow never breaks
-        return res.json({ 
-          message: `OTP Generated! (Live cloud server blocked email port. Demo OTP Code: ${otp})` 
-        });
+        return res.status(500).json({
+  message: "Failed to send OTP email. Please try again later."
+});
       }
     } else {
       console.log("------------------------------------------");
       console.log(`📱 SMS SIMULATOR: Sending to ${cleanIdentifier}`);
-      console.log(`💬 MESSAGE: Your CrystalBeauty OTP is ${otp}`);
+      console.log(`💬 SMS OTP generated for ${cleanIdentifier}`);
       console.log("------------------------------------------");
 
       return res.json({ message: "OTP sent via SMS" });
