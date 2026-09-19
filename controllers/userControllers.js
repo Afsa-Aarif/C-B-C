@@ -71,7 +71,7 @@ export const sendOTP = async (req, res) => {
       // CATCH SMTP PORT BLOCKING SAFELY (Prevents 500 Server Crashes on Free Hosting)
       try {
         await transporter.sendMail(mailOptions);
-        console.log(`✅ Email sent successfully via Gmail SMTP to ${user.email}`);
+        console.log(`✅ Email sent successfully via Brevo SMTP to ${user.email}`);
         return res.json({ message: "OTP sent to your email address!" });
       } catch (mailError) {
         console.error("⚠️ SMTP Network Error / Port Blocked:", mailError.message);
