@@ -13,6 +13,7 @@ import paymentRouter from "./routers/paymentRouter.js";
 import wishlistRouter from "./routers/wishlistRouter.js";
 import contactRouter from "./routers/contactRouter.js";
 import couponRouter from "./routers/couponRouter.js";
+import notificationRouter from "./routers/notificationRouter.js";
 
 const app = express();
 
@@ -91,7 +92,7 @@ app.use("/api/payment", paymentRouter);
 app.use("/api/wishlist", wishlistRouter);
 app.use("/api/contact", contactRouter);
 app.use("/api/coupons", couponRouter);
-
+app.use("/api/notifications", notificationRouter);
 // 6. Health Check
 app.get("/", (req, res) => {
   res.json({ 

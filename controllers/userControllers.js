@@ -4,6 +4,8 @@ import User from "../models/user.js";
 import OTP from "../models/otpModel.js";
 import nodemailer from "nodemailer";
 import getDesignedEmail from "../lib/emailDesigner.js";
+import Notification from "../models/notification.js";
+import { sendNotificationEmail } from "../lib/notificationEmail.js";
 
 // Configure Nodemailer Transporter using Gmail SMTP
 const transporter = nodemailer.createTransport({
@@ -175,14 +177,33 @@ export const createUser = async (req, res) => {
 
     await user.save();
 
-    return res.status(201).json({
-      message: "User created successfully",
-    });
+// Create welcome notification
+await Notification.create({
+  userId: user._id,
+  type: "WELCOME",
+  title: "Welcome to Crystal Beauty Clear!",
+  message: `Hi ${user.firstName}, welcome to Crystal Beauty Clear. We are happy to have you with us.`,
+});
+
+// Send welcome email
+await sendNotificationEmail({
+  to: user.email,
+  firstName: user.firstName,
+  title: "Welcome to Crystal Beauty Clear!",
+  message: `Hi ${user.firstName}, welcome to Crystal Beauty Clear. Your account has been created successfully.`,
+});
+
+return res.status(201).json({
+  message: "User created successfully",
+});
+  
   } catch (error) {
-    return res.status(500).json({
-      message: "Failed to create user",
-    });
-  }
+  console.error("Create User Error:", error);
+
+  return res.status(500).json({
+    message: "Failed to create user",
+  });
+}
 };
 
 // --- 4. LOGIN USER ---
