@@ -227,13 +227,21 @@ export async function loginUser(req, res) {
 
     const isMatch = bcrypt.compareSync(password, user.password);
 
-    if (!isMatch) {
-      return res.status(401).json({
-        message: "Invalid password",
-      });
-    }
+   if (!isMatch) {
+  return res.status(401).json({
+    message: "Invalid password",
+  });
+}
 
-    const secret = process.env.JWT_KEY || "jwt-secret";
+// Create login notification
+await Notification.create({
+  userId: user._id,
+  type: "LOGIN",
+  title: "Welcome back!",
+  message: `Hi ${user.firstName}, welcome back to Crystal Beauty Clear.`,
+});
+
+const secret = process.env.JWT_KEY || "jwt-secret";
 
     const token = jwt.sign(
       {
@@ -246,6 +254,13 @@ export async function loginUser(req, res) {
         expiresIn: "24h",
       }
     );
+    // Send login notification email
+await sendNotificationEmail({
+  to: user.email,
+  firstName: user.firstName,
+  title: "Welcome back to Crystal Beauty Clear!",
+  message: `Hi ${user.firstName}, you have successfully logged in to your Crystal Beauty Clear account.`,
+});
 
     return res.json({
       message: "Login successful",

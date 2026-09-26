@@ -1,6 +1,8 @@
 import express from "express";
 import Coupon from "../models/couponModel.js";
-
+import User from "../models/user.js";
+import Notification from "../models/notification.js";
+import { sendNotificationEmail } from "../lib/notificationEmail.js";
 const couponRouter = express.Router();
 
 // Helper middleware for Admin authorization
@@ -49,7 +51,55 @@ couponRouter.post("/", isAdmin, async (req, res) => {
     });
 
     await newCoupon.save();
-    res.status(201).json({ message: "Promo code created successfully", coupon: newCoupon });
+
+// Notify all customers about the new promotion
+const customers = await User.find({
+  role: "customer",
+});
+
+const promotionTitle = "New Promotion Available!";
+
+const promotionMessage =
+  `${newCoupon.code} is now available. ` +
+  `Get ${newCoupon.discountType === "percentage"
+    ? `${newCoupon.discountValue}% off`
+    : `LKR ${newCoupon.discountValue} off`
+  } on your purchase.` +
+  `${newCoupon.minPurchase > 0
+    ? ` Minimum purchase: LKR ${newCoupon.minPurchase}.`
+    : ""
+  }` +
+  `${newCoupon.expirationDate
+    ? ` Offer valid until ${new Date(newCoupon.expirationDate).toLocaleDateString()}.`
+    : ""
+  }`;
+
+// Create in-app notifications for all customers
+if (customers.length > 0) {
+  await Notification.insertMany(
+    customers.map((customer) => ({
+      userId: customer._id,
+      type: "PROMOTION",
+      title: promotionTitle,
+      message: promotionMessage,
+    }))
+  );
+
+  // Send promotion emails
+  for (const customer of customers) {
+    await sendNotificationEmail({
+      to: customer.email,
+      firstName: customer.firstName,
+      title: promotionTitle,
+      message: promotionMessage,
+    });
+  }
+}
+
+res.status(201).json({
+  message: "Promo code created successfully",
+  coupon: newCoupon,
+});
   } catch (error) {
     res.status(500).json({ message: "Failed to create promo code", error: error.message });
   }

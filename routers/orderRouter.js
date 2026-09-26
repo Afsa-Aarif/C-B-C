@@ -1,7 +1,9 @@
 import express from "express";
 import Order from "../models/order.js";
-import Coupon from "../models/couponModel.js"; // Importing coupon model to increment usage count
-
+import Coupon from "../models/couponModel.js";
+import User from "../models/user.js";
+import Notification from "../models/notification.js";
+import { sendNotificationEmail } from "../lib/notificationEmail.js";
 const orderRouter = express.Router();
 
 // 1. Route to get orders for a SPECIFIC user (Required for MyOrdersPage)
@@ -74,7 +76,32 @@ orderRouter.post("/", async (req, res) => {
     });
 
     await newOrder.save();
-    res.status(201).json({ message: "Order placed successfully!", order: newOrder });
+
+// Find the customer account
+const user = await User.findOne({ email });
+
+if (user) {
+  // Create in-app order notification
+  await Notification.create({
+    userId: user._id,
+    type: "ORDER_PLACED",
+    title: "Order placed successfully!",
+    message: `Hi ${user.firstName}, your order has been placed successfully. Your order total is Rs. ${total}.`,
+  });
+
+  // Send order confirmation email
+  await sendNotificationEmail({
+    to: user.email,
+    firstName: user.firstName,
+    title: "Your order has been placed!",
+    message: `Hi ${user.firstName}, your order has been placed successfully. Your total is Rs. ${total}. We will keep you updated about your order status.`,
+  });
+}
+
+res.status(201).json({
+  message: "Order placed successfully!",
+  order: newOrder
+});
   } catch (error) {
     console.error("Order Creation Error Stack:", error);
     res.status(500).json({ message: "Failed to process order", details: error.message });
@@ -104,16 +131,39 @@ orderRouter.put("/status/:id", async (req, res) => {
     const { status } = req.body;
 
     const updatedOrder = await Order.findByIdAndUpdate(
-      id,
-      { status },
-      { new: true }
-    );
+  id,
+  { status },
+  { new: true }
+);
 
-    if (!updatedOrder) {
-      return res.status(404).json({ message: "Order not found" });
-    }
+if (!updatedOrder) {
+  return res.status(404).json({ message: "Order not found" });
+}
 
-    res.json(updatedOrder);
+// Find the customer account
+const user = await User.findOne({
+  email: updatedOrder.email,
+});
+
+if (user) {
+  // Create in-app status notification
+  await Notification.create({
+    userId: user._id,
+    type: "ORDER_STATUS",
+    title: `Order status updated: ${status}`,
+    message: `Hi ${user.firstName}, your order status has been updated to "${status}".`,
+  });
+
+  // Send status update email
+  await sendNotificationEmail({
+    to: user.email,
+    firstName: user.firstName,
+    title: `Your order status is now ${status}`,
+    message: `Hi ${user.firstName}, your order status has been updated to "${status}".`,
+  });
+}
+
+res.json(updatedOrder);
   } catch (error) {
     console.error("Update Error:", error);
     res.status(500).json({ message: "Error updating status" });

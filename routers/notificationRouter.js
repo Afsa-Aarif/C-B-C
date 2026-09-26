@@ -1,6 +1,5 @@
 import express from "express";
 import {
-  createNotification,
   getUserNotifications,
   markNotificationAsRead,
 } from "../controllers/notificationControllers.js";
@@ -11,7 +10,7 @@ const notificationRouter = express.Router();
 notificationRouter.get("/", getUserNotifications);
 
 // Create a notification
-notificationRouter.post("/", createNotification);
+
 
 // Mark a notification as read
 notificationRouter.put("/:id/read", markNotificationAsRead);
