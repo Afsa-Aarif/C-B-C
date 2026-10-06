@@ -87,9 +87,10 @@ export async function updateProduct(req, res) {
       }
     }
 
-    if (updateData.price) updateData.price = Number(updateData.price);
-    if (updateData.labelledPrice) updateData.labelledPrice = Number(updateData.labelledPrice);
-    if (updateData.stock) updateData.stock = Number(updateData.stock);
+   if (updateData.price) updateData.price = Number(updateData.price);
+if (updateData.labelledPrice) updateData.labelledPrice = Number(updateData.labelledPrice);
+if (updateData.stock) updateData.stock = Number(updateData.stock);
+if (updateData.soldCount) updateData.soldCount = Number(updateData.soldCount);
 
     // If new image files are uploaded during update, add them to data payload
     if (req.files && req.files.length > 0) {
@@ -102,6 +103,7 @@ export async function updateProduct(req, res) {
       new: true,
       runValidators: true 
     });
+    
     
     if (!updatedProduct) {
       return res.status(404).json({ message: "Product not found" });
