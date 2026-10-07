@@ -24,6 +24,38 @@ orderRouter.get("/user/:email", async (req, res) => {
     res.status(500).json({ message: "Error fetching user orders" });
   }
 });
+// Get one specific order for the logged-in customer
+orderRouter.get("/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { email } = req.query;
+
+    if (!email) {
+      return res.status(400).json({
+        message: "Customer email is required"
+      });
+    }
+
+    const order = await Order.findOne({
+      _id: id,
+      email: email
+    });
+
+    if (!order) {
+      return res.status(404).json({
+        message: "Order not found"
+      });
+    }
+
+    res.json(order);
+
+  } catch (error) {
+    console.error("Fetch Order Details Error:", error);
+    res.status(500).json({
+      message: "Error fetching order details"
+    });
+  }
+});
 
 // 2. Route to create a new order (Supports Cards, COD, Guests, and Promo Codes)
 orderRouter.post("/", async (req, res) => {
