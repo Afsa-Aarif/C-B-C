@@ -316,7 +316,11 @@ export const updateUser = async (req, res) => {
     let updateData = {
       ...(req.body || {}),
     };
-
+// Prevent customers from changing protected account fields
+delete updateData.role;
+delete updateData.isBlock;
+delete updateData.membershipCompletedCount;
+delete updateData.isEmailVerified;
     if (req.file) {
       updateData.image = `/uploads/${req.file.filename}`;
     }
@@ -428,7 +432,48 @@ export const getAllUsers = async (req, res) => {
     });
   }
 };
+// --- RECORD COMPLETED MEMBERSHIP ACTIVITY ---
+export const recordMembershipActivity = async (req, res) => {
+  try {
+    const { id } = req.params;
 
+    const user = await User.findOneAndUpdate(
+      { _id: id, role: "customer" },
+      { $inc: { membershipCompletedCount: 1 } },
+      { new: true, runValidators: true }
+    ).select("-password -otp -otpExpiry");
+
+    if (!user) {
+      return res.status(404).json({
+        message: "Customer not found",
+      });
+    }
+
+    const count = user.membershipCompletedCount;
+
+    let membershipTier = "Regular";
+
+    if (count >= 10) {
+      membershipTier = "VIP";
+    } else if (count >= 5) {
+      membershipTier = "Premium";
+    }
+
+    return res.status(200).json({
+      message: "Membership activity recorded successfully",
+      membershipCompletedCount: count,
+      membershipTier,
+      user,
+    });
+
+  } catch (error) {
+    console.error("Membership Activity Error:", error);
+
+    return res.status(500).json({
+      message: "Failed to record membership activity",
+    });
+  }
+};
 // --- VERIFY ADMIN MIDDLEWARE ---
 export function verifyAdmin(req, res, next) {
   if (

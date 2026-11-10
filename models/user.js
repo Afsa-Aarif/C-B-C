@@ -38,6 +38,11 @@ const userSchema = new mongoose.Schema({
     required: true,
     default: "customer",
   },
+  membershipCompletedCount: {
+  type: Number,
+  default: 0,
+  min: 0,
+},
 
   isBlock: {
     type: Boolean,

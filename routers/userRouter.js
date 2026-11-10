@@ -9,6 +9,8 @@ import {
   updateUserStatus,
   sendOTP,
   changePassword,
+  recordMembershipActivity,
+  verifyAdmin,
 } from "../controllers/userControllers.js";
 import upload from "../middlewares/upload.js";
 
@@ -64,12 +66,30 @@ userRouter.get("/send-otp/:identifier", sendOTP);
 userRouter.post("/change-password", changePassword);
 
 // --- Admin Routes ---
-userRouter.get("/all-users", verifyTokenInline, requireAuth, getAllUsers);
+// --- ADMIN ROUTES ---
+userRouter.get(
+  "/all-users",
+  verifyTokenInline,
+  requireAuth,
+  verifyAdmin,
+  getAllUsers
+);
+
 userRouter.put(
   "/block-unblock/:id",
   verifyTokenInline,
   requireAuth,
+  verifyAdmin,
   updateUserStatus
+);
+
+// --- ADMIN: RECORD MEMBERSHIP ACTIVITY ---
+userRouter.post(
+  "/admin/:id/membership-activity",
+  verifyTokenInline,
+  requireAuth,
+  verifyAdmin,
+  recordMembershipActivity
 );
 
 // Backward compatibility route wrapper
