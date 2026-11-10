@@ -1,6 +1,7 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import User from "../models/user.js";
+import MembershipRequest from "../models/membershipRequest.js";
 import OTP from "../models/otpModel.js";
 import nodemailer from "nodemailer";
 import getDesignedEmail from "../lib/emailDesigner.js";
@@ -474,6 +475,230 @@ export const recordMembershipActivity = async (req, res) => {
     });
   }
 };
+
+// --- CUSTOMER: REQUEST MEMBERSHIP UPGRADE ---
+export const requestMembershipUpgrade = async (req, res) => {
+  try {
+    const { requestedTier } = req.body;
+
+    if (!["Premium", "VIP"].includes(requestedTier)) {
+      return res.status(400).json({
+        message: "Invalid membership tier requested",
+      });
+    }
+
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({
+        message: "Unauthorized",
+      });
+    }
+
+    const customer = await User.findOne({
+      _id: req.user.id,
+      role: "customer",
+    });
+
+    if (!customer) {
+      return res.status(404).json({
+        message: "Customer not found",
+      });
+    }
+
+    const count = customer.membershipCompletedCount || 0;
+const eligibleTier =
+  count === 9 ? "VIP" : count === 4 ? "Premium" : null;
+    if (eligibleTier !== requestedTier) {
+      return res.status(400).json({
+        message: "You are not yet eligible for this membership upgrade",
+      });
+    }
+
+    const existingRequest = await MembershipRequest.findOne({
+      customer: customer._id,
+      status: "Pending",
+    });
+
+    if (existingRequest) {
+      return res.status(409).json({
+        message: "You already have a pending membership request",
+      });
+    }
+
+    const membershipRequest = await MembershipRequest.create({
+      customer: customer._id,
+      requestedTier,
+    });
+
+    return res.status(201).json({
+      message: "Membership upgrade request submitted successfully",
+      request: membershipRequest,
+    });
+
+  } catch (error) {
+    console.error("Membership Request Error:", error);
+
+    if (error.code === 11000) {
+      return res.status(409).json({
+        message: "You already have a pending membership request",
+      });
+    }
+
+    return res.status(500).json({
+      message: "Failed to submit membership request",
+    });
+  }
+};
+
+ // --- ADMIN: GET ALL MEMBERSHIP REQUESTS ---
+export const getMembershipRequests = async (req, res) => {
+  try {
+    const requests = await MembershipRequest.find()
+      .populate(
+        "customer",
+        "firstName lastName email membershipCompletedCount"
+      )
+      .populate("reviewedBy", "firstName lastName email")
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      message: "Membership requests retrieved successfully",
+      requests,
+    });
+  } catch (error) {
+    console.error("Get Membership Requests Error:", error);
+
+    return res.status(500).json({
+      message: "Failed to retrieve membership requests",
+    });
+  }
+};
+
+ // --- ADMIN: APPROVE MEMBERSHIP REQUEST ---
+export const approveMembershipRequest = async (req, res) => {
+  let claimedRequest = null;
+
+  try {
+    const { id } = req.params;
+
+    // Claim the pending request to prevent double approval
+    claimedRequest = await MembershipRequest.findOneAndUpdate(
+      { _id: id, status: "Pending" },
+      {
+        $set: {
+          status: "Approved",
+          reviewedBy: req.user.id,
+          reviewedAt: new Date(),
+        },
+      },
+      { new: true }
+    );
+
+    if (!claimedRequest) {
+      return res.status(404).json({
+        message: "Pending membership request not found",
+      });
+    }
+
+    const expectedCount =
+      claimedRequest.requestedTier === "Premium" ? 4 : 9;
+
+    // Increase membership count only if the customer is eligible
+    const customer = await User.findOneAndUpdate(
+      {
+        _id: claimedRequest.customer,
+        role: "customer",
+        membershipCompletedCount: expectedCount,
+      },
+      { $inc: { membershipCompletedCount: 1 } },
+      { new: true, runValidators: true }
+    ).select("-password -otp -otpExpiry");
+
+    if (!customer) {
+      // Restore request to Pending if customer is no longer eligible
+      await MembershipRequest.updateOne(
+        { _id: id, status: "Approved" },
+        {
+          $set: {
+            status: "Pending",
+            reviewedBy: null,
+            reviewedAt: null,
+          },
+        }
+      );
+
+      claimedRequest = null;
+
+      return res.status(409).json({
+        message: "Customer is no longer eligible for this upgrade",
+      });
+    }
+
+    return res.status(200).json({
+      message: "Membership request approved successfully",
+      membershipCompletedCount: customer.membershipCompletedCount,
+      customer,
+    });
+
+  } catch (error) {
+    console.error("Approve Membership Request Error:", error);
+
+    if (claimedRequest) {
+      await MembershipRequest.updateOne(
+        { _id: claimedRequest._id, status: "Approved" },
+        {
+          $set: {
+            status: "Pending",
+            reviewedBy: null,
+            reviewedAt: null,
+          },
+        }
+      );
+    }
+
+    return res.status(500).json({
+      message: "Failed to approve membership request",
+    });
+  }
+};
+
+// --- ADMIN: REJECT MEMBERSHIP REQUEST ---
+export const rejectMembershipRequest = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const request = await MembershipRequest.findOneAndUpdate(
+      { _id: id, status: "Pending" },
+      {
+        $set: {
+          status: "Rejected",
+          reviewedBy: req.user.id,
+          reviewedAt: new Date(),
+        },
+      },
+      { new: true }
+    );
+
+    if (!request) {
+      return res.status(404).json({
+        message: "Pending membership request not found",
+      });
+    }
+
+    return res.status(200).json({
+      message: "Membership request rejected successfully",
+      request,
+    });
+
+  } catch (error) {
+    console.error("Reject Membership Request Error:", error);
+
+    return res.status(500).json({
+      message: "Failed to reject membership request",
+    });
+  }
+};
+
+
 // --- VERIFY ADMIN MIDDLEWARE ---
 export function verifyAdmin(req, res, next) {
   if (

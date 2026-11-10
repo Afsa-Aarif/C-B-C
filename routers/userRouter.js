@@ -10,6 +10,10 @@ import {
   sendOTP,
   changePassword,
   recordMembershipActivity,
+  requestMembershipUpgrade,
+  getMembershipRequests,
+  approveMembershipRequest,
+  rejectMembershipRequest,
   verifyAdmin,
 } from "../controllers/userControllers.js";
 import upload from "../middlewares/upload.js";
@@ -90,6 +94,39 @@ userRouter.post(
   requireAuth,
   verifyAdmin,
   recordMembershipActivity
+);
+// Customer membership upgrade request
+userRouter.post(
+  "/membership-request",
+  verifyTokenInline,
+  requireAuth,
+  requestMembershipUpgrade
+);
+// Admin: View all membership requests
+userRouter.get(
+  "/admin/membership-requests",
+  verifyTokenInline,
+  requireAuth,
+  verifyAdmin,
+  getMembershipRequests
+);
+
+// Admin: Approve membership request
+userRouter.put(
+  "/admin/membership-requests/:id/approve",
+  verifyTokenInline,
+  requireAuth,
+  verifyAdmin,
+  approveMembershipRequest
+);
+
+// Admin: Reject membership request
+userRouter.put(
+  "/admin/membership-requests/:id/reject",
+  verifyTokenInline,
+  requireAuth,
+  verifyAdmin,
+  rejectMembershipRequest
 );
 
 // Backward compatibility route wrapper
