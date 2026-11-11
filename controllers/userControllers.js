@@ -548,7 +548,31 @@ const eligibleTier =
     });
   }
 };
+// --- CUSTOMER: GET MY LATEST MEMBERSHIP REQUEST ---
+export const getMyMembershipRequest = async (req, res) => {
+  try {
+    if (!req.user || req.user.role !== "customer") {
+      return res.status(403).json({
+        message: "Access denied",
+      });
+    }
 
+    const request = await MembershipRequest.findOne({
+      customer: req.user.id,
+    }).sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      request,
+    });
+
+  } catch (error) {
+    console.error("Get My Membership Request Error:", error);
+
+    return res.status(500).json({
+      message: "Failed to retrieve membership request",
+    });
+  }
+};
  // --- ADMIN: GET ALL MEMBERSHIP REQUESTS ---
 export const getMembershipRequests = async (req, res) => {
   try {

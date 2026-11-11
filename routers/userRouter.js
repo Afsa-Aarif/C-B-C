@@ -11,6 +11,7 @@ import {
   changePassword,
   recordMembershipActivity,
   requestMembershipUpgrade,
+  getMyMembershipRequest,
   getMembershipRequests,
   approveMembershipRequest,
   rejectMembershipRequest,
@@ -101,6 +102,12 @@ userRouter.post(
   verifyTokenInline,
   requireAuth,
   requestMembershipUpgrade
+);
+userRouter.get(
+  "/membership-request",
+  verifyTokenInline,
+  requireAuth,
+  getMyMembershipRequest
 );
 // Admin: View all membership requests
 userRouter.get(
