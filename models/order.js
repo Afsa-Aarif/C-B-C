@@ -19,6 +19,10 @@ const orderSchema = new mongoose.Schema({
   paymentStatus: { type: String, required: true, default: "Pending" }, 
   transactionId: { type: String, required: true, default: "N/A" }, 
   status: { type: String, default: "pending" },
+  membershipActivityAwarded: {
+  type: Boolean,
+  default: false
+},
   date: { type: Date, default: Date.now }
 });
 

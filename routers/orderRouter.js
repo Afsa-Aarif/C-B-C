@@ -161,23 +161,65 @@ orderRouter.put("/status/:id", async (req, res) => {
     }
     const { id } = req.params;
     const { status } = req.body;
+let updatedOrder;
+let membershipActivityJustAwarded = false;
 
-    const updatedOrder = await Order.findByIdAndUpdate(
-  id,
-  { status },
-  { new: true }
-);
+if (String(status).toLowerCase() === "delivered") {
+  // Award membership activity only once per order
+  updatedOrder = await Order.findOneAndUpdate(
+    {
+      _id: id,
+      membershipActivityAwarded: { $ne: true }
+    },
+    {
+      $set: {
+        status: status,
+        membershipActivityAwarded: true
+      }
+    },
+    { new: true }
+  );
+    if (updatedOrder) {
+    membershipActivityJustAwarded = true;
+  }
 
+  // If already awarded, update the status without awarding again
+  if (!updatedOrder) {
+    updatedOrder = await Order.findByIdAndUpdate(
+      id,
+      { status },
+      { new: true }
+    );
+  }
+} else {
+  updatedOrder = await Order.findByIdAndUpdate(
+    id,
+    { status },
+    { new: true }
+  );
+}
 if (!updatedOrder) {
   return res.status(404).json({ message: "Order not found" });
 }
+
+// Award one membership activity only when an order is first delivered
+
+
 
 // Find the customer account
 const user = await User.findOne({
   email: updatedOrder.email,
 });
-
+console.log("Order status:", updatedOrder.status);
+console.log("Membership award flag:", membershipActivityJustAwarded);
+console.log("Customer found:", !!user);
 if (user) {
+  if (membershipActivityJustAwarded) {
+  await User.findByIdAndUpdate(
+    user._id,
+    { $inc: { membershipCompletedCount: 1 } }
+  );
+}
   // Create in-app status notification
   await Notification.create({
     userId: user._id,
